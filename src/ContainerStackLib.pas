@@ -22,6 +22,11 @@ type
     constructor Create(_clientForm: TForm; _animation: TAnimationStyle; _duration: Single);
   end;
 
+  IContainerStackShowNotification = interface
+    ['{91636B06-3D21-4ED0-93E3-13E0BFD180A8}']
+    procedure WillShow;
+  end;
+
   TContainerStack = class(TObject)
   private
     fMainForm: TForm;
@@ -55,9 +60,12 @@ type
     procedure ShowForm(clientForm: TForm; animationStyle: TAnimationStyle; duration: Single = 0.2);
 
     procedure Back;
+    function CanGoBack: Boolean;
   end;
 
 implementation
+
+uses System.SysUtils;
 
 { TContainerStack }
 
@@ -67,6 +75,7 @@ var
   newData: TAnimationFormData;
   currentFormData: TClientFormData;
   newFormData: TClientFormData;
+  showInterface: IContainerStackShowNotification;
 begin
   if not IsInit then exit;
 
@@ -81,8 +90,21 @@ begin
       exit;
     end;
 
+    if Supports(newData.clientForm, IContainerStackShowNotification, showInterface) then
+    begin
+      showInterface.WillShow;
+    end;
+
     DoAnimation(currentFormData.mainFormContainer, newFormData.mainFormContainer, getBackAnimation(currentData.Animation), true, currentData.duration);
   end;
+end;
+
+function TContainerStack.CanGoBack: Boolean;
+begin
+  Result := false;
+  if not IsInit then exit;
+
+  Result := fFormStack.Count>1;
 end;
 
 constructor TContainerStack.Create;
@@ -280,6 +302,7 @@ var
   newData: TClientFormData;
   newLayout: TLayout;
   currentLayout: TLayout;
+  showInterface: IContainerStackShowNotification;
 begin
   if not IsInit then exit;
 
@@ -296,6 +319,12 @@ begin
     exit;
   end;
 
+  if Supports(clientForm, IContainerStackShowNotification, showInterface) then
+  begin
+    showInterface.WillShow;
+  end;
+
+
   currentLayout := currentData.mainFormContainer;
   newLayout := newData.mainFormContainer;
 
@@ -307,8 +336,14 @@ end;
 procedure TContainerStack.ShowFormNoAnimation(clientForm: TForm);
 var
   data: TClientFormData;
+  showInterface: IContainerStackShowNotification;
 begin
   if not IsInit then exit;
+
+  if Supports(clientForm, IContainerStackShowNotification, showInterface) then
+  begin
+    showInterface.WillShow;
+  end;
 
   HideAllForms;
   if formLayoutDict.TryGetValue(clientForm, data) then
