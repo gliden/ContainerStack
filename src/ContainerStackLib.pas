@@ -27,6 +27,11 @@ type
     procedure WillShow;
   end;
 
+  IContainerStackDidShowNotification = interface
+  ['{3D6C263B-0B38-4E0B-AE17-8B266682797A}']
+    procedure DidShow;
+  end;
+
   TContainerStack = class(TObject)
   private
     fMainForm: TForm;
@@ -34,6 +39,7 @@ type
     formLayoutDict: TObjectDictionary<TForm,TClientFormData>;
     fFormStack: TStack<TAnimationFormData>;
     fIsInit: Boolean;
+    FInAnimation: Boolean;
 
     function GetFirstItemOf(fmxObject: TFmxObject; searchClass: TFmxObjectClass): TFmxObject;
     procedure HideAllForms;
@@ -76,6 +82,7 @@ var
   currentFormData: TClientFormData;
   newFormData: TClientFormData;
   showInterface: IContainerStackShowNotification;
+  didShowInterface: IContainerStackDidShowNotification;
 begin
   if not IsInit then exit;
 
@@ -96,6 +103,11 @@ begin
     end;
 
     DoAnimation(currentFormData.mainFormContainer, newFormData.mainFormContainer, getBackAnimation(currentData.Animation), true, currentData.duration);
+
+    if Supports(newData.clientForm, IContainerStackDidShowNotification, didShowInterface) then
+    begin
+      didShowInterface.DidShow;
+    end;
   end;
 end;
 
@@ -110,6 +122,7 @@ end;
 constructor TContainerStack.Create;
 begin
   fIsInit := false;
+  FInAnimation := false;
 
   fMainForm := nil;
   formList := TList<TForm>.Create;
@@ -303,6 +316,7 @@ var
   newLayout: TLayout;
   currentLayout: TLayout;
   showInterface: IContainerStackShowNotification;
+  didShowInterface: IContainerStackDidShowNotification;
 begin
   if not IsInit then exit;
 
@@ -319,18 +333,30 @@ begin
     exit;
   end;
 
-  if Supports(clientForm, IContainerStackShowNotification, showInterface) then
-  begin
-    showInterface.WillShow;
+  if FInAnimation then exit;
+
+  FInAnimation := true;
+  try
+    if Supports(clientForm, IContainerStackShowNotification, showInterface) then
+    begin
+      showInterface.WillShow;
+    end;
+
+
+    currentLayout := currentData.mainFormContainer;
+    newLayout := newData.mainFormContainer;
+
+    DoAnimation(currentLayout, newLayout, animationStyle, false, duration);
+
+    if Supports(newData.clientForm, IContainerStackDidShowNotification, didShowInterface) then
+    begin
+      didShowInterface.DidShow;
+    end;
+
+    fFormStack.Push(TAnimationFormData.Create(clientForm,animationStyle, duration));
+  finally
+    FInAnimation := false;
   end;
-
-
-  currentLayout := currentData.mainFormContainer;
-  newLayout := newData.mainFormContainer;
-
-  DoAnimation(currentLayout, newLayout, animationStyle, false, duration);
-
-  fFormStack.Push(TAnimationFormData.Create(clientForm,animationStyle, duration));
 end;
 
 procedure TContainerStack.ShowFormNoAnimation(clientForm: TForm);
@@ -339,18 +365,24 @@ var
   showInterface: IContainerStackShowNotification;
 begin
   if not IsInit then exit;
+  if FInAnimation then exit;
 
-  if Supports(clientForm, IContainerStackShowNotification, showInterface) then
-  begin
-    showInterface.WillShow;
-  end;
+  FInAnimation := true;
+  try
+    if Supports(clientForm, IContainerStackShowNotification, showInterface) then
+    begin
+      showInterface.WillShow;
+    end;
 
-  HideAllForms;
-  if formLayoutDict.TryGetValue(clientForm, data) then
-  begin
-    data.mainFormContainer.Align := TAlignLayout.Client;
-    data.mainFormContainer.Visible := true;
-    fFormStack.Push(TAnimationFormData.Create(clientForm, TAnimationStyle.None, 0));
+    HideAllForms;
+    if formLayoutDict.TryGetValue(clientForm, data) then
+    begin
+      data.mainFormContainer.Align := TAlignLayout.Client;
+      data.mainFormContainer.Visible := true;
+      fFormStack.Push(TAnimationFormData.Create(clientForm, TAnimationStyle.None, 0));
+    end;
+  finally
+    FInAnimation := false;
   end;
 end;
 
