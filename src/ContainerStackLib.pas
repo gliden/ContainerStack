@@ -3,7 +3,8 @@ unit ContainerStackLib;
 interface
 
 uses
-  FMX.Layouts, FMX.Forms, System.Generics.Collections, FMX.Types, FMX.Ani;
+  FMX.Layouts, FMX.Forms, System.Generics.Collections, FMX.Types, FMX.Ani,
+  System.Classes;
 
 type
   TAnimationStyle = (None, FromRight, FromLeft, FromTop, FromBottom,
@@ -32,6 +33,11 @@ type
     procedure DidShow;
   end;
 
+  IContainerStackWillHideNotification = interface
+  ['{3F98E2C7-74CD-4D53-A73D-9086A5FDAA3D}']
+    procedure WillHide;
+  end;
+
   TContainerStack = class(TObject)
   private
     fMainForm: TForm;
@@ -40,7 +46,9 @@ type
     fFormStack: TStack<TAnimationFormData>;
     fIsInit: Boolean;
     FInAnimation: Boolean;
+    FHandleHardwareBack: Boolean;
 
+    procedure OnMainFormKeyUp(Sender: TObject; var Key: Word; var KeyChar: WideChar; Shift: TShiftState);
     function GetFirstItemOf(fmxObject: TFmxObject; searchClass: TFmxObjectClass): TFmxObject;
     procedure HideAllForms;
     function getVisibleForm: TForm;
@@ -49,11 +57,13 @@ type
     procedure DoAnimation(currentLayout, newLayout: TLayout; animation: TAnimationStyle; isBackAnimation: Boolean; duration: Single = 0.2);
   private class
     var globalContainerStack: TContainerStack;
+    procedure SetHandleHardwareBack(const Value: Boolean);
   public class
     function Current: TContainerStack;
   public
     property CurrentVisibleForm: TForm read getVisibleForm;
     property IsInit: Boolean read fIsInit;
+    property HandleHardwareBack: Boolean read FHandleHardwareBack write SetHandleHardwareBack;
 
     constructor Create;
     destructor Destroy;override;
@@ -71,7 +81,7 @@ type
 
 implementation
 
-uses System.SysUtils;
+uses System.SysUtils, FMX.Platform, FMX.VirtualKeyboard, System.UITypes;
 
 { TContainerStack }
 
@@ -83,6 +93,7 @@ var
   newFormData: TClientFormData;
   showInterface: IContainerStackShowNotification;
   didShowInterface: IContainerStackDidShowNotification;
+  hideInterface: IContainerStackWillHideNotification;
 begin
   if not IsInit then exit;
 
@@ -100,6 +111,11 @@ begin
     if Supports(newData.clientForm, IContainerStackShowNotification, showInterface) then
     begin
       showInterface.WillShow;
+    end;
+
+    if Supports(currentData.clientForm, IContainerStackWillHideNotification, hideInterface) then
+    begin
+      hideInterface.WillHide;
     end;
 
     DoAnimation(currentFormData.mainFormContainer, newFormData.mainFormContainer, getBackAnimation(currentData.Animation), true, currentData.duration);
@@ -123,6 +139,7 @@ constructor TContainerStack.Create;
 begin
   fIsInit := false;
   FInAnimation := false;
+  FHandleHardwareBack := false;
 
   fMainForm := nil;
   formList := TList<TForm>.Create;
@@ -286,6 +303,29 @@ begin
   fIsInit := true;
 end;
 
+procedure TContainerStack.OnMainFormKeyUp(Sender: TObject; var Key: Word;
+  var KeyChar: WideChar; Shift: TShiftState);
+var
+  FService : IFMXVirtualKeyboardService;
+begin
+  if Key = vkHardwareBack then
+  begin
+    TPlatformServices.Current.SupportsPlatformService(IFMXVirtualKeyboardService, IInterface(FService));
+    if (FService <> nil) and (TVirtualKeyboardState.Visible in FService.VirtualKeyBoardState) then
+    begin
+      // Back button pressed, keyboard visible, so do nothing...
+    end else
+    begin
+      // Back button pressed, keyboard not visible or not supported on this platform, lets exit the app...
+      if fFormStack.Count>1 then
+      begin
+        Back;
+        Key := 0;
+      end;
+    end;
+  end;
+end;
+
 procedure TContainerStack.RegisterForm(clientform: TForm; container: TLayout);
 var
   clientData: TClientFormData;
@@ -308,6 +348,18 @@ begin
   end;
 end;
 
+procedure TContainerStack.SetHandleHardwareBack(const Value: Boolean);
+begin
+  if (FHandleHardwareBack <> Value) and (IsInit) then
+  begin
+    FHandleHardwareBack := Value;
+    if FHandleHardwareBack then
+    begin
+      fMainForm.OnKeyUp := OnMainFormKeyUp;
+    end;
+  end;
+end;
+
 procedure TContainerStack.ShowForm(clientForm: TForm;
   animationStyle: TAnimationStyle; duration: Single = 0.2);
 var
@@ -317,6 +369,7 @@ var
   currentLayout: TLayout;
   showInterface: IContainerStackShowNotification;
   didShowInterface: IContainerStackDidShowNotification;
+  hideInterface: IContainerStackWillHideNotification;
 begin
   if not IsInit then exit;
 
@@ -342,6 +395,11 @@ begin
       showInterface.WillShow;
     end;
 
+    if Supports(currentData.clientForm, IContainerStackWillHideNotification, hideInterface) then
+    begin
+      hideInterface.WillHide;
+    end;
+
 
     currentLayout := currentData.mainFormContainer;
     newLayout := newData.mainFormContainer;
@@ -363,6 +421,7 @@ procedure TContainerStack.ShowFormNoAnimation(clientForm: TForm);
 var
   data: TClientFormData;
   showInterface: IContainerStackShowNotification;
+  didShowInterface: IContainerStackDidShowNotification;
 begin
   if not IsInit then exit;
   if FInAnimation then exit;
@@ -380,6 +439,11 @@ begin
       data.mainFormContainer.Align := TAlignLayout.Client;
       data.mainFormContainer.Visible := true;
       fFormStack.Push(TAnimationFormData.Create(clientForm, TAnimationStyle.None, 0));
+    end;
+
+    if Supports(clientForm, IContainerStackDidShowNotification, didShowInterface) then
+    begin
+      didShowInterface.DidShow;
     end;
   finally
     FInAnimation := false;
