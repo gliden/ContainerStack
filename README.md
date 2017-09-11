@@ -50,3 +50,4 @@ If you just want to go back to your previous form with the corresponding animati
 ```
 TContainerStack.Current.Back;
 ```
+The backkey on Android-Devices is handled too.
